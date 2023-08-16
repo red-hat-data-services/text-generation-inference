@@ -8,7 +8,7 @@ ARG OPTIMUM_VERSION=1.9.1
 FROM registry.access.redhat.com/ubi8/ubi:${BASE_UBI_IMAGE_TAG} as base
 WORKDIR /app
 
-RUN dnf install -y --disableplugin=subscription-manager \
+RUN dnf update -y && dnf install -y --disableplugin=subscription-manager \
     make \
     # to help with debugging
     procps \
@@ -182,7 +182,10 @@ RUN dnf install -y --disableplugin=subscription-manager \
 RUN cd ~ && \
     curl -L -O https://repo.anaconda.com/miniconda/Miniconda3-py39_23.5.2-0-Linux-x86_64.sh && \
     chmod +x Miniconda3-*-Linux-x86_64.sh && \
-    bash ./Miniconda3-*-Linux-x86_64.sh -bf -p /opt/miniconda
+    bash ./Miniconda3-*-Linux-x86_64.sh -bf -p /opt/miniconda && \
+    /opt/miniconda/bin/conda update -y --all && \
+    /opt/miniconda/bin/conda update -y cryptography && \
+    /opt/miniconda/bin/conda clean -y --all
 
 # Remove tests directory containing test private keys
 RUN rm -r /opt/miniconda/pkgs/conda-content-trust-*/info/test/tests
