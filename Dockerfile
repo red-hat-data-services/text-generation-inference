@@ -209,6 +209,7 @@ ARG FLASH_ATT_VERSION=v2.3.6
 
 WORKDIR /usr/src/flash-attention-v2
 
+RUN pip install -U packaging --no-cache-dir
 # Download the wheel or build it if a pre-compiled release doesn't exist
 RUN MAX_JOBS=4 pip --verbose wheel flash-attn==${FLASH_ATT_VERSION} \
     --no-build-isolation --no-deps --no-cache-dir
