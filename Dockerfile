@@ -1,9 +1,15 @@
 ## Global Args #################################################################
-ARG BASE_UBI_IMAGE_TAG=9.3-1476
-ARG PROTOC_VERSION=25.1
-#ARG PYTORCH_INDEX="https://download.pytorch.org/whl"
-ARG PYTORCH_INDEX="https://download.pytorch.org/whl/nightly"
-ARG PYTORCH_VERSION=2.3.0.dev20240125
+ARG BASE_UBI_IMAGE_TAG=9.3-1552
+ARG PROTOC_VERSION=25.2
+ARG PYTORCH_INDEX="https://download.pytorch.org/whl"
+# ARG PYTORCH_INDEX="https://download.pytorch.org/whl/nightly"
+
+# match PyTorch version that was used to compile flash-attention v2 pre-built wheels
+# e.g. flash-attn v2.5.2 => torch ['1.12.1', '1.13.1', '2.0.1', '2.1.2', '2.2.0', '2.3.0.dev20240126']
+# https://github.com/Dao-AILab/flash-attention/blob/v2.5.2/.github/workflows/publish.yml#L47
+# use nightly build index for torch .dev pre-release versions
+ARG PYTORCH_VERSION=2.2.0
+
 ARG PYTHON_VERSION=3.11
 
 ## Base Layer ##################################################################
@@ -91,7 +97,7 @@ ENV LIBRARY_PATH="$CUDA_HOME/lib64/stubs"
 
 ## Rust builder ################################################################
 # Specific debian version so that compatible glibc version is used
-FROM rust:1.75-bullseye as rust-builder
+FROM rust:1.76-bullseye as rust-builder
 ARG PROTOC_VERSION
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
@@ -121,19 +127,20 @@ RUN cargo install --path .
 ## Launcher builder ############################################################
 FROM rust-builder as launcher-builder
 
+ARG GIT_COMMIT_HASH
 COPY launcher launcher
 
 WORKDIR /usr/src/launcher
 
 #RUN --mount=type=cache,target=/root/.cargo --mount=type=cache,target=/usr/src/launcher/target cargo install --path .
-RUN cargo install --path .
+RUN env GIT_COMMIT_HASH=${GIT_COMMIT_HASH} cargo install --path .
 
 ## Tests base ##################################################################
 FROM base as test-base
 
 ARG PYTHON_VERSION
 
-RUN dnf install -y make unzip python${PYTHON_VERSION} python${PYTHON_VERSION}-pip gcc openssl-devel gcc-c++ && \
+RUN dnf install -y make unzip python${PYTHON_VERSION} python${PYTHON_VERSION}-pip gcc openssl-devel gcc-c++ git && \
     dnf clean all && \
     ln -fs /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
     ln -s /usr/bin/python${PYTHON_VERSION} /usr/local/bin/python && ln -s /usr/bin/pip${PYTHON_VERSION} /usr/local/bin/pip
@@ -164,7 +171,7 @@ RUN cd server && \
     make gen-server && \
     pip install ".[accelerate]" --no-cache-dir
 
-# Patch codegen model changes into transformers 4.35
+# Patch codegen model changes into transformers
 RUN cp server/transformers_patch/modeling_codegen.py ${SITE_PACKAGES}/transformers/models/codegen/modeling_codegen.py
 
 # Install router
@@ -181,7 +188,7 @@ FROM cuda-devel as python-builder
 ARG PYTORCH_INDEX
 ARG PYTORCH_VERSION
 ARG PYTHON_VERSION
-ARG MINIFORGE_VERSION=23.3.1-1
+ARG MINIFORGE_VERSION=23.11.0-0
 
 # consistent arch support anywhere we compile CUDA code
 ENV TORCH_CUDA_ARCH_LIST="8.0;8.6+PTX;8.9"
@@ -200,18 +207,20 @@ ENV PATH=/opt/tgis/bin/:$PATH
 
 # Install specific version of torch
 RUN pip install ninja==1.11.1.1 --no-cache-dir
+RUN pip install packaging --no-cache-dir
 RUN pip install torch==$PYTORCH_VERSION+cu118 --index-url "${PYTORCH_INDEX}/cu118" --no-cache-dir
 
 
 ## Build flash attention v2 ####################################################
 FROM python-builder as flash-att-v2-builder
-ARG FLASH_ATT_VERSION=v2.3.6
+ARG FLASH_ATT_VERSION=v2.5.2
 
 WORKDIR /usr/src/flash-attention-v2
 
 RUN pip install -U packaging --no-cache-dir
 # Download the wheel or build it if a pre-compiled release doesn't exist
-RUN MAX_JOBS=4 pip --verbose wheel flash-attn==${FLASH_ATT_VERSION} \
+# MAX_JOBS: For CI, limit number of parallel compilation threads otherwise the github runner goes OOM
+RUN MAX_JOBS=2 pip --verbose wheel flash-attn==${FLASH_ATT_VERSION} \
     --no-build-isolation --no-deps --no-cache-dir
 
 ## Build flash attention  ######################################################
@@ -220,6 +229,10 @@ FROM python-builder as flash-att-builder
 WORKDIR /usr/src
 
 COPY server/Makefile-flash-att Makefile
+
+# For CI, limit number of parallel compilation threads otherwise the github runner goes OOM
+ENV MAX_JOBS=2
+
 RUN make build-flash-attention
 
 ## Install auto-gptq ###########################################################
@@ -279,7 +292,7 @@ ARG PYTHON_VERSION
 ARG SITE_PACKAGES=/opt/tgis/lib/python${PYTHON_VERSION}/site-packages
 
 # Install C++ compiler (required at runtime when PT2_COMPILE is enabled)
-RUN dnf install -y gcc-c++ && dnf clean all \
+RUN dnf install -y gcc-c++ git && dnf clean all \
     && useradd -u 2000 tgis -m -g 0
 
 SHELL ["/bin/bash", "-c"]
@@ -312,7 +325,7 @@ RUN --mount=type=bind,from=auto-gptq-cache,src=/usr/src/auto-gptq-wheel,target=/
 # Install server
 COPY proto proto
 COPY server server
-RUN cd server && make gen-server && pip install ".[accelerate, onnx-gpu, quantize]" --no-cache-dir
+RUN cd server && make gen-server && pip install ".[accelerate, ibm-fms, onnx-gpu, quantize]" --no-cache-dir
 
 # Patch codegen model changes into transformers 4.35
 RUN cp server/transformers_patch/modeling_codegen.py ${SITE_PACKAGES}/transformers/models/codegen/modeling_codegen.py
