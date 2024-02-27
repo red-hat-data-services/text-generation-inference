@@ -32,36 +32,47 @@ def serve(
     uds_path: Path = "/tmp/text-generation",
 ):
     from text_generation_server import server
+    from text_generation_server.utils.termination import write_termination_log
 
     if sharded:
-        assert (
-            os.getenv("RANK", None) is not None
-        ), "RANK must be set when sharded is True"
-        assert (
-            os.getenv("WORLD_SIZE", None) is not None
-        ), "WORLD_SIZE must be set when sharded is True"
-        assert (
-            os.getenv("MASTER_ADDR", None) is not None
-        ), "MASTER_ADDR must be set when sharded is True"
-        assert (
-            os.getenv("MASTER_PORT", None) is not None
-        ), "MASTER_PORT must be set when sharded is True"
+        try:
+            assert (
+                os.getenv("RANK", None) is not None
+            ), "RANK must be set when sharded is True"
+            assert (
+                os.getenv("WORLD_SIZE", None) is not None
+            ), "WORLD_SIZE must be set when sharded is True"
+            assert (
+                os.getenv("MASTER_ADDR", None) is not None
+            ), "MASTER_ADDR must be set when sharded is True"
+            assert (
+                os.getenv("MASTER_PORT", None) is not None
+            ), "MASTER_PORT must be set when sharded is True"
+        except AssertionError as e:
+            write_termination_log(str(e))
+            raise e
 
-    server.serve(
-        model_name,
-        revision,
-        deployment_framework,
-        dtype,
-        # Downgrade enum into str for easier management later on
-        None if quantize is None else quantize.value,
-        max_sequence_length,
-        max_new_tokens,
-        max_batch_size,
-        batch_safety_margin,
-        sharded,
-        cuda_process_memory_fraction,
-        uds_path
-    )
+    try:
+        server.serve(
+            model_name,
+            revision,
+            deployment_framework,
+            dtype,
+            # Downgrade enum into str for easier management later on
+            None if quantize is None else quantize.value,
+            max_sequence_length,
+            max_new_tokens,
+            max_batch_size,
+            batch_safety_margin,
+            sharded,
+            cuda_process_memory_fraction,
+            uds_path
+        )
+    except Exception as e:
+        # Any exceptions in the blocking server thread here should mean that
+        # the server terminated due to an error
+        write_termination_log(str(e))
+        raise e
 
 
 @app.command()
@@ -127,16 +138,21 @@ def convert_to_safetensors(
     # Get local pytorch file paths
     model_path = utils.get_model_path(model_name, revision)
     local_pt_files = utils.local_weight_files(model_path, ".bin")
+    local_pt_index_files = utils.local_index_files(model_path, ".bin")
+    if len(local_pt_index_files) > 1:
+        print(f"Found more than one .bin.index.json file: {local_pt_index_files}")
+        return
 
     if not local_pt_files:
         print("No pytorch .bin files found to convert")
         return
 
     local_pt_files = [Path(f) for f in local_pt_files]
+    local_pt_index_file = local_pt_index_files[0] if local_pt_index_files else None
 
     # Safetensors final filenames
     local_st_files = [
-        p.parent / f"{p.stem.lstrip('pytorch_')}.safetensors"
+        p.parent / f"{p.stem.removeprefix('pytorch_')}.safetensors"
         for p in local_pt_files
     ]
 
@@ -161,6 +177,16 @@ def convert_to_safetensors(
 
     except Exception:
         discard_names = []
+
+    if local_pt_index_file:
+        local_pt_index_file = Path(local_pt_index_file)
+        local_st_index_file = local_pt_index_file.parent / f"{local_pt_index_file.stem.removeprefix('pytorch_').rstrip('.bin.index')}.safetensors.index.json"
+
+        if os.path.exists(local_st_index_file):
+            print("Existing .safetensors.index.json file found, remove it first to reconvert")
+            return
+
+        utils.convert_index_file(local_pt_index_file, local_st_index_file, local_pt_files, local_st_files)
 
     # Convert pytorch weights to safetensors
     utils.convert_files(local_pt_files, local_st_files, discard_names)
