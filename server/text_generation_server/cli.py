@@ -25,7 +25,7 @@ def serve(
     max_sequence_length: int = 2048,
     max_new_tokens: int = 1024,
     max_batch_size: int = 12,
-    batch_safety_margin: int = 20,
+    batch_safety_margin: int = typer.Option(20, help="Integer from 0-100, a percentage of free GPU memory to hold back as a safety margin to avoid OOM"),
     revision: Optional[str] = None,
     sharded: bool = False,
     cuda_process_memory_fraction: float = 1.0,
@@ -180,7 +180,8 @@ def convert_to_safetensors(
 
     if local_pt_index_file:
         local_pt_index_file = Path(local_pt_index_file)
-        local_st_index_file = local_pt_index_file.parent / f"{local_pt_index_file.stem.removeprefix('pytorch_').rstrip('.bin.index')}.safetensors.index.json"
+        st_prefix = local_pt_index_file.stem.removeprefix('pytorch_').rstrip('.bin.index')
+        local_st_index_file = local_pt_index_file.parent / f"{st_prefix}.safetensors.index.json"
 
         if os.path.exists(local_st_index_file):
             print("Existing .safetensors.index.json file found, remove it first to reconvert")
