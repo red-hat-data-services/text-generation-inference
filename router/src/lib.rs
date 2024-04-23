@@ -1,14 +1,16 @@
+#![allow(clippy::type_complexity, clippy::result_large_err)]
+mod batch_types;
+mod batcher;
+mod decoder;
+pub mod grpc_server;
 /// Text Generation Inference Webserver
 mod health;
-mod batcher;
-pub mod server;
-pub mod grpc_server;
-mod validation;
-mod decoder;
 mod pb;
 mod queue;
-mod batch_types;
+pub mod server;
 mod tokenizer;
+mod validation;
+mod tracing;
 
 use batcher::Batcher;
 use serde::{Deserialize, Serialize};
@@ -34,7 +36,7 @@ pub(crate) struct GenerateParameters {
     pub repetition_penalty: f32,
 
     pub length_penalty: Option<(u32, f32)>,
-    
+
     pub min_new_tokens: u32,
     #[serde(skip)]
     pub deadline: Option<Instant>,
