@@ -162,7 +162,7 @@ COPY proto proto
 COPY server server
 RUN cd server && \
     make gen-server && \
-    pip install ".[accelerate]" --no-cache-dir
+    pip install ".[accelerate]" --default-timeout=1000 --no-cache-dir
 
 # temp: install newer transformers lib that optimum clashes with
 RUN pip install transformers==4.40.0 tokenizers==0.19.1 --no-cache-dir
