@@ -31,7 +31,9 @@ All RHOAI TGIS images are stored in:
 
 https://quay.io/repository/modh/text-generation-inference?tab=tags 
 
-All Open Data Hub TGIS images are stored in (not su):
+All Open Data Hub TGIS images are stored in (not supported in RHOAI): 
+
+https://quay.io/repository/opendatahub/text-generation-inference?tab=tags 
 
 #### RHOAI 2.9 Release
 
