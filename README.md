@@ -44,13 +44,13 @@ https://quay.io/repository/opendatahub/text-generation-inference?tab=tags
 - ODH commit: [daaa6b676864cdee3152fa8f5cc887617f7ff2b0](https://github.com/opendatahub-io/text-generation-inference/commit/daaa6b676864cdee3152fa8f5cc887617f7ff2b0) from April 11, 2024
 - IBM commit: [0a73cb7768f2e0b2a0c1883861b77ae9185bab47](https://github.com/IBM/text-generation-inference/commit/0a73cb7768f2e0b2a0c1883861b77ae9185bab47) from April 10, 2024
 
-#### RHOAI 2.8.3 Release -- *in progress*
+#### RHOAI 2.8.3 Release -- *Image is ready for RHOAI release, but RHOAI 2.8.3 is not yet released*
 
-- RHOAI Image: 
-- RHOAI Image SHA: 
-- RHOAI commit SHA:
-- ODH Image:
-- ODH commit:
+- RHOAI Image: [quay.io/modh/text-generation-inference:rhoai-2.8-c9d0852](quay.io/modh/text-generation-inference:rhoai-2.8-c9d0852)
+- RHOAI Image SHA: sha256:61458fa55b1f4f9b2b1a45c829e2a4312f42c9dcc5de167e60e3cda94568c302
+- RHOAI commit SHA: [c9d08526b70383b3e42208e937f5d357333d31f2](https://github.com/red-hat-data-services/text-generation-inference/commit/c9d08526b70383b3e42208e937f5d357333d31f2) from May 16, 2024
+- ODH Image: [quay.io/opendatahub/text-generation-inference:stable-1b3dc71](quay.io/opendatahub/text-generation-inference:stable-1b3dc71)
+- ODH commit: [1b3dc71a6d4f220503b6cf7b409517442afe2fb6](https://github.com/opendatahub-io/text-generation-inference/commit/1b3dc71a6d4f220503b6cf7b409517442afe2fb6) from May 15, 2024
 - IBM commit: [fb23def9b391588e5825ff2aae4ace3b0ffb4b00](https://github.com/IBM/text-generation-inference/commit/fb23def9b391588e5825ff2aae4ace3b0ffb4b00) from May 14, 2024
 
 #### RHOAI 2.8.2 Release
