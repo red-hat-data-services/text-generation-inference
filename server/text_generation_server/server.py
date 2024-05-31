@@ -56,7 +56,7 @@ def log_rpc_handler_errors(func):
 
 
 class TextGenerationService(generate_pb2_grpc.TextGenerationServiceServicer):
-    def __init__(self, model: Model, cache: Cache, server_urls: List[str], memory_scaling_model: MemoryScalingModelPB):
+    def __init__(self, model: Model, cache: Cache, server_urls: List[str], memory_scaling_model: MemoryScalingModel):
         self.cache = cache
         self.model = model
         self.server_urls = server_urls
@@ -81,7 +81,7 @@ class TextGenerationService(generate_pb2_grpc.TextGenerationServiceServicer):
                 if isinstance(self.model, Seq2SeqLM) else ModelInfoResponse.ModelType.CAUSAL_LM,
             eos_token=self.model.config.eos_token_id,
             batch_padding=not isinstance(self.model, FlashCausalLM),
-            memory_scaling_model=self.memory_scaling_model,
+            memory_scaling_model=self.memory_scaling_model.as_pb(),
         )
 
     @log_rpc_handler_errors
@@ -234,8 +234,9 @@ class TextGenerationService(generate_pb2_grpc.TextGenerationServiceServicer):
             ]
         else:
             return
-        self.model.kv_cache_manager.free_sequences(sequence_ids_to_free, recursive=True)
 
+        if sequence_ids_to_free is not None:
+            self.model.kv_cache_manager.free_sequences(sequence_ids_to_free, recursive=True)
 
 def serve(
     model_name: str,
@@ -276,6 +277,8 @@ def serve(
             proc.start()
             memory_scaling_model_ext = q_out.get()
             proc.join()
+        else:
+            memory_scaling_model_ext = None
 
         unix_socket_template = "unix://{}-{}"
         world_size = int(os.getenv("WORLD_SIZE", "1"))
@@ -307,7 +310,7 @@ def serve(
             torch.cuda.set_per_process_memory_fraction(cuda_process_memory_fraction)
 
         model = get_model(
-            model_name, revision, deployment_framework, dtype_str, quantize, max_sequence_length
+            model_name, revision, deployment_framework, dtype_str, quantize, max_sequence_length, memory_scaling_model_ext,
         )
 
         device = model.engine.get_device()
@@ -415,7 +418,7 @@ def serve(
 
         server = aio.server()
         generate_pb2_grpc.add_TextGenerationServiceServicer_to_server(
-            TextGenerationService(model, Cache(), server_urls, memory_scaling_model.as_pb()), server
+            TextGenerationService(model, Cache(), server_urls, memory_scaling_model), server
         )
         # SERVICE_NAMES = (
         #     generate_pb2.DESCRIPTOR.services_by_name["TextGenerationService"].full_name,
