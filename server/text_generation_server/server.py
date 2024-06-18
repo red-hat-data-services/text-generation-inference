@@ -56,7 +56,7 @@ def log_rpc_handler_errors(func):
 
 
 class TextGenerationService(generate_pb2_grpc.TextGenerationServiceServicer):
-    def __init__(self, model: Model, cache: Cache, server_urls: List[str], memory_scaling_model: MemoryScalingModelPB):
+    def __init__(self, model: Model, cache: Cache, server_urls: List[str], memory_scaling_model: MemoryScalingModel):
         self.cache = cache
         self.model = model
         self.server_urls = server_urls
@@ -81,7 +81,7 @@ class TextGenerationService(generate_pb2_grpc.TextGenerationServiceServicer):
                 if isinstance(self.model, Seq2SeqLM) else ModelInfoResponse.ModelType.CAUSAL_LM,
             eos_token=getattr(self.model.tokenizer, 'model_eos_token_id', self.model.tokenizer.eos_token_id),
             batch_padding=not isinstance(self.model, FlashCausalLM),
-            memory_scaling_model=self.memory_scaling_model,
+            memory_scaling_model=self.memory_scaling_model.as_pb(),
         )
 
     @log_rpc_handler_errors
@@ -244,8 +244,9 @@ class TextGenerationService(generate_pb2_grpc.TextGenerationServiceServicer):
             ]
         else:
             return
-        self.model.kv_cache_manager.free_sequences(sequence_ids_to_free, recursive=True)
 
+        if sequence_ids_to_free is not None:
+            self.model.kv_cache_manager.free_sequences(sequence_ids_to_free, recursive=True)
 
 def serve(
     model_name: str,
@@ -273,6 +274,22 @@ def serve(
         batch_safety_margin: int,
         sharded: bool = False,
     ):
+        if quantize not in [None, "gptq", "bitsandbytes"]:
+            raise ValueError(f"Unrecognized quantization method specified: {quantize}")
+
+        if quantize is None and dtype_str == "int8":
+            print_rank_n("Inferring quantize = bitsandbytes because dtype == int8")
+            quantize = "bitsandbytes"
+
+        cuda_available = torch.cuda.is_available()
+
+        # Default dtype based on device if not provided
+        if dtype_str is None:
+            dtype_str = "float16" if cuda_available else "float32"
+
+        if quantize is not None and not cuda_available:
+            raise ValueError("Quantization requires CUDA")
+
         if ESTIMATE_MEMORY == "auto" and PAGED_ATTENTION:
             # fit memory model using flash model in separate process (ensures GPU memory is entirely cleaned up)
             from text_generation_server.utils.paged import fit_memory_scaling_model
@@ -286,6 +303,8 @@ def serve(
             proc.start()
             memory_scaling_model_ext = q_out.get()
             proc.join()
+        else:
+            memory_scaling_model_ext = None
 
         unix_socket_template = "unix://{}-{}"
         world_size = int(os.getenv("WORLD_SIZE", "1"))
@@ -296,28 +315,12 @@ def serve(
         ]
         local_url = server_urls[local_rank]
 
-        if quantize not in [None, "gptq", "bitsandbytes"]:
-            raise ValueError(f"Unrecognized quantization method specified: {quantize}")
-
-        # Default dtype based on device if not provided
-        if dtype_str is None:
-            dtype_str = "float16" if torch.cuda.is_available() else "float32"
-
-        if quantize is None and dtype_str == "int8":
-            print_rank_n("Inferring quantize = bitsandbytes because dtype == int8")
-            quantize = "bitsandbytes"
-
-        cuda_available = torch.cuda.is_available()
-
-        if quantize is not None and not cuda_available:
-            raise ValueError("Quantization requires CUDA")
-
         # Set the fraction of cuda/gpu mem available to this process, then load the model
         if cuda_available and cuda_process_memory_fraction < 1:
             torch.cuda.set_per_process_memory_fraction(cuda_process_memory_fraction)
 
         model = get_model(
-            model_name, revision, deployment_framework, dtype_str, quantize, max_sequence_length
+            model_name, revision, deployment_framework, dtype_str, quantize, max_sequence_length, memory_scaling_model_ext,
         )
 
         device = model.engine.get_device()
@@ -424,7 +427,7 @@ def serve(
 
         server = aio.server()
         generate_pb2_grpc.add_TextGenerationServiceServicer_to_server(
-            TextGenerationService(model, Cache(), server_urls, memory_scaling_model.as_pb()), server
+            TextGenerationService(model, Cache(), server_urls, memory_scaling_model), server
         )
         # SERVICE_NAMES = (
         #     generate_pb2.DESCRIPTOR.services_by_name["TextGenerationService"].full_name,
