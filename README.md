@@ -35,7 +35,16 @@ All Open Data Hub TGIS images are stored in (not supported in RHOAI):
 
 https://quay.io/repository/opendatahub/text-generation-inference?tab=tags 
 
-#### RHOAI 2.10 Release -- *Image is ready for RHOAI release, but RHOAI 2.10.0 is not yet released*
+#### RHOAI 2.11 Release
+
+- RHOAI Image: [quay.io/modh/text-generation-inference:rhoai-2.11-503da48](quay.io/modh/text-generation-inference:rhoai-2.11-503da48) 
+- RHOAI Image SHA: sha256:294f07b2a94a223a18e559d497a79cac53bf7893f36cfc6c995475b6e431bcfe
+- RHOAI commit SHA: [503da489fcf29395b7287bd5dc9196cec734f009](https://github.com/red-hat-data-services/text-generation-inference/commit/503da489fcf29395b7287bd5dc9196cec734f009) from May 29, 2024
+- ODH Image: [quay.io/opendatahub/text-generation-inference:stable-d5340ca](quay.io/opendatahub/text-generation-inference:stable-d5340ca) 
+- ODH commit: d5340ca9dda17bc8480832a776921e5d35bff991](https://github.com/opendatahub-io/text-generation-inference/commit/d5340ca9dda17bc8480832a776921e5d35bff991) from Jun 21, 2024
+- IBM commit: [c26539097eae46b8e6f94fd3aeff8213e1edb272](https://github.com/IBM/text-generation-inference/commit/c26539097eae46b8e6f94fd3aeff8213e1edb272) from May 31, 2024
+  
+#### RHOAI 2.10 Release
 
 - RHOAI Image: [quay.io/modh/text-generation-inference:rhoai-2.10-6be52f6](quay.io/modh/text-generation-inference:rhoai-2.10-6be52f6) 
 - RHOAI Image SHA: sha256:2f2438084666ed6b2ad522ba76b825b4c0985e56fab25b4c10eed289e4a4832a
