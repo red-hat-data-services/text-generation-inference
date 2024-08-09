@@ -318,7 +318,13 @@ RUN --mount=type=bind,from=auto-gptq-cache,src=/usr/src/auto-gptq-wheel,target=/
 # Install server
 COPY proto proto
 COPY server server
-RUN cd server && make gen-server && pip install ".[accelerate, ibm-fms, onnx-gpu, quantize]" --no-cache-dir
+RUN echo "================= Dumping CUDA Env ==============" && \
+    env | grep -i CUDA && \
+    echo "PATH=$PATH" && \
+    uname -a && \
+    rpm -qi redhat-release && \
+    echo "=================== End CUDA Env ================" && \
+    cd server && make gen-server && pip install ".[accelerate, ibm-fms, onnx-gpu, quantize]" --no-cache-dir
 
 # Patch codegen model changes into transformers 4.35
 RUN cp server/transformers_patch/modeling_codegen.py ${SITE_PACKAGES}/transformers/models/codegen/modeling_codegen.py
