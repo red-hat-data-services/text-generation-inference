@@ -7,7 +7,7 @@ from typing import Optional, Any
 
 from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
-from text_generation_server.models import FLASH_ATTENTION
+from text_generation_server.models import FLASH_ATTENTION, PAGED_ATTENTION
 from text_generation_server.utils import Weights
 
 from text_generation_server.inference_engine import BaseInferenceEngine
@@ -80,8 +80,12 @@ class InferenceEngine(BaseInferenceEngine):
         elif model_type == "gpt_bigcode":
             self._config.transpose = self._config.architectures[0].startswith("GPT2")
             aliases = {"transformer.wte.weight": ["lm_head.weight"]}
-            from text_generation_server.models.custom_modeling.flash_santacoder_modeling import FlashSantacoderForCausalLM
-            model_class = FlashSantacoderForCausalLM
+            if PAGED_ATTENTION:
+                from text_generation_server.models.custom_modeling.paged_santacoder_modeling import PagedSantacoderForCausalLM
+                model_class = PagedSantacoderForCausalLM
+            else:
+                from text_generation_server.models.custom_modeling.flash_santacoder_modeling import FlashSantacoderForCausalLM
+                model_class = FlashSantacoderForCausalLM
 
         elif model_type in ["RefinedWeb", "RefinedWebModel", "falcon"]:
             if sharded and self._config.alibi:
@@ -94,8 +98,17 @@ class InferenceEngine(BaseInferenceEngine):
             model_class = FlashRWForCausalLM
 
         elif model_type == "llama":
-            from text_generation_server.models.custom_modeling.flash_llama_modeling import FlashLlamaForCausalLM
-            model_class = FlashLlamaForCausalLM
+            # See: https://github.com/ibm-granite/vllm_granite/blob/main/vllm/model_executor/models/llama.py#L353-L354
+            if self._config.tie_word_embeddings:
+                aliases = {
+                    "lm_head.weight": ["model.embed_tokens.weight"]
+                }
+            if PAGED_ATTENTION:
+                from text_generation_server.models.custom_modeling.paged_llama_modeling import PagedLlamaForCausalLM
+                model_class = PagedLlamaForCausalLM
+            else:
+                from text_generation_server.models.custom_modeling.flash_llama_modeling import FlashLlamaForCausalLM
+                model_class = FlashLlamaForCausalLM
 
         self._config.quantize = quantize
 
