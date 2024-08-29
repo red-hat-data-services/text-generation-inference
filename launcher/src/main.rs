@@ -139,7 +139,54 @@ fn main() -> ExitCode {
     // Determine number of shards based on command line arg and env vars
     let num_shard = find_num_shards(args.num_shard);
 
-    let config_path: PathBuf = resolve_config_path(&args.model_name, args.revision.as_deref())
+    // Determine the model cache path and resolve from possible env vars:
+    // - HF_HUB_CACHE
+    // - TRANSFORMERS_CACHE (deprecated)
+    // - HUGGINGFACE_HUB_CACHE (deprecated)
+    //
+    // We allow multiple to be set for compatibility, but then the values must match.
+
+    let mut cache_env_var: String = "".to_string();
+    let mut cache_env_value: String = "".to_string();
+
+    if let Ok(t) = env::var("HF_HUB_CACHE") {
+        cache_env_var = "HF_HUB_CACHE".into();
+        cache_env_value = t.into();
+    }
+
+    for deprecated_env_var in vec!["TRANSFORMERS_CACHE", "HUGGINGFACE_HUB_CACHE"] {
+        match (
+            env::var(deprecated_env_var),
+            !cache_env_var.is_empty(),
+        ) {
+            (Ok(t), false) => {
+                cache_env_var = deprecated_env_var.into();
+                cache_env_value = t.into();
+            },
+            (Ok(t), true) if t != cache_env_value => panic!(
+                "{deprecated_env_var} and {cache_env_var} env vars can't be set to different values"
+            ),
+            (Ok(_), true) => warn!(
+                "{deprecated_env_var} is deprecated and should not be used. Use HF_HUB_CACHE instead."
+            ),
+            _ => (),
+        }
+    }
+
+    // ensure HF_HUB_CACHE is set for downstream usage
+    // default value to match huggingface_hub
+    // REF: https://github.com/huggingface/huggingface_hub/blob/5ff2d150d121d04799b78bc08f2343c21b8f07a9/docs/source/en/package_reference/environment_variables.md?plain=1#L32
+    let cache_path = if !cache_env_value.is_empty() {
+        PathBuf::from(cache_env_value)
+    } else if let Ok(hf_home) = env::var("HF_HOME") {
+        PathBuf::from(hf_home).join("hub")
+    } else if let Ok(home) = env::var("HOME") {
+        PathBuf::from(home).join(".cache").join("huggingface").join("hub")
+    } else {
+        PathBuf::new()
+    };
+
+    let config_path: PathBuf = resolve_config_path(cache_path.clone(), &args.model_name, args.revision.as_deref())
         .expect("Failed to resolve config path")
         .into();
 
@@ -223,8 +270,10 @@ fn main() -> ExitCode {
     let (status_sender, status_receiver) = mpsc::channel();
 
     // Start shard processes
+    let cache_path_string = cache_path.into_os_string();
     for rank in 0..num_shard {
         let args = args.clone();
+        let cache_path = cache_path_string.clone();
         let deployment_framework = deployment_framework.to_string();
         let status_sender = status_sender.clone();
         let shutdown = shutdown.clone();
@@ -232,6 +281,7 @@ fn main() -> ExitCode {
         thread::spawn(move || {
             shard_manager(
                 args.model_name,
+                cache_path,
                 args.revision,
                 deployment_framework,
                 args.dtype.or(args.dtype_str),
@@ -441,32 +491,39 @@ fn num_cuda_devices() -> Option<usize> {
     let n_devices = devices.split(',').count();
     Some(n_devices)
 }
+
 /// Finds a max sequence length for the model. In priority order:
 /// 1. MAX_SEQUENCE_LENGTH set by user
 /// 2. The sequence length specified in config.json
-/// 3. A default of 2048
+/// 3. A default of 2048 
+/// ### Arguments
+/// * `max_sequence_length` - Optional user-defined maximum sequence length.
+/// * `config_path` - Path to the model configuration file.
+/// ### Returns
+/// The effective maximum sequence length to be used.
 fn get_max_sequence_length(max_sequence_length: Option<usize>, config_path: &Path) -> usize {
-    if let Some(max_sequence_length) = max_sequence_length {
-        info!(
-            "Using configured max_sequence_length: {}",
-            max_sequence_length
-        );
-        return max_sequence_length;
-    }
+    let mut length: Option<usize> = max_sequence_length;
+    let mut source = "user-defined";
+
     if let Ok(model_config) = get_config_json(config_path) {
-        if let Some(length) = get_max_sequence_length_from_config(&model_config) {
-            info!(
-                "Loaded max_sequence_length from model config.json: {}",
-                length
-            );
-            return length;
+        if let Some(model_length) = get_max_sequence_length_from_config(&model_config) {
+            if length.is_some_and(|length| length > model_length) {
+                warn!("User-defined max_sequence_length ({}) is greater than the model's max_sequence_length ({})",
+                length.unwrap(), model_length
+                );
+            }
+            length.get_or_insert_with(|| {
+                source = "model";
+                model_length
+            });
         }
     }
-    info!(
-        "Using default max_sequence_length: {}",
+    let result = length.unwrap_or_else(|| {
+        source = "default";
         DEFAULT_MAX_SEQUENCE_LENGTH
-    );
-    DEFAULT_MAX_SEQUENCE_LENGTH
+    });
+    info!("Using {} max_sequence_length: {}", source, result);
+    return result;    
 }
 
 /// Opens the model's config.json file and reads into serde_json value
@@ -548,6 +605,7 @@ enum ShardStatus {
 #[allow(clippy::too_many_arguments)]
 fn shard_manager(
     model_name: String,
+    cache_path: OsString,
     revision: Option<String>,
     deployment_framework: String,
     dtype: Option<String>,
@@ -620,19 +678,6 @@ fn shard_manager(
     // Copy current process env
     let mut env: Vec<(OsString, OsString)> = env::vars_os().collect();
 
-    // Fix up TRANSFORMERS_CACHE and HUGGINGFACE_HUB_CACHE env vars
-    match (
-        env::var("TRANSFORMERS_CACHE"),
-        env::var("HUGGINGFACE_HUB_CACHE"),
-    ) {
-        (Ok(t), Err(_)) => env.push(("HUGGINGFACE_HUB_CACHE".into(), t.into())),
-        (Err(_), Ok(h)) => env.push(("TRANSFORMERS_CACHE".into(), h.into())),
-        (Ok(t), Ok(h)) if t != h => panic!(
-            "TRANSFORMERS_CACHE and HUGGINGFACE_HUB_CACHE env vars can't be set to different values"
-        ),
-        _ => (),
-    }
-
     if let Some(alloc_conf) = cuda_alloc_conf {
         if alloc_conf.is_empty() {
             // Remove it from env
@@ -664,6 +709,9 @@ fn shard_manager(
 
     // Ensure offline-only
     env.push(("HF_HUB_OFFLINE".into(), "1".into()));
+
+    // Ensure that we set the standard cache variable
+    env.push(("HF_HUB_CACHE".into(), cache_path.into()));
 
     // Start process
     info!("Starting shard {rank}");
@@ -776,18 +824,13 @@ fn write_termination_log(msg: &str) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn resolve_config_path(model_name: &str, revision: Option<&str>) -> Result<String, io::Error> {
-    let cache = env::var("TRANSFORMERS_CACHE")
-        .or_else(|_| env::var("HUGGINGFACE_HUB_CACHE"))
-        .ok();
-    let mut model_dir = cache
-        .as_ref()
-        .map(|c| Path::new(&c).join(format!("models--{}", model_name.replace('/', "--"))));
-    if let Some(ref d) = model_dir {
-        if !d.try_exists()? {
-            model_dir = None;
-        }
-    }
+fn resolve_config_path(cache_path: PathBuf, model_name: &str, revision: Option<&str>) -> Result<String, io::Error> {
+    let model_hf_cache_dir = cache_path.join(format!("models--{}", model_name.replace('/', "--")));
+    let model_dir = if model_hf_cache_dir.try_exists()? {
+        Some(model_hf_cache_dir)
+    } else {
+        None
+    };
     if let Some(dir) = model_dir {
         let revision = revision.unwrap_or("main");
         let ref_path = dir.join("refs").join(revision);
@@ -811,11 +854,7 @@ fn resolve_config_path(model_name: &str, revision: Option<&str>) -> Result<Strin
         if try_path.try_exists()? {
             Ok(try_path.to_string_lossy().into())
         } else {
-            let message = if cache.is_none() {
-                format!("Model path {model_name} not found (TRANSFORMERS_CACHE env var not set)")
-            } else {
-                format!("Model {model_name} not found in local cache")
-            };
+            let message = format!("Model {model_name} not found");
             error!(message);
             Err(io::Error::new(ErrorKind::NotFound, message))
         }
@@ -831,19 +870,24 @@ fn save_fast_tokenizer(
     info!("Saving fast tokenizer for `{model_name}` to `{save_path}`");
     let model_name = model_name.escape_default();
     let revision = revision.map(|v| v.escape_default());
-    let code = if let Some(revision) = revision {
-        format!(
-            "from transformers import AutoTokenizer; \
-            AutoTokenizer.from_pretrained(\"{model_name}\", \
-            revision=\"{revision}\", local_files_only=True).save_pretrained(\"{save_path}\")"
-        )
+    let revision_arg = if let Some(revision) = revision {
+        format!("revision=\"{revision}\", ")
     } else {
-        format!(
-            "from transformers import AutoTokenizer; \
-            AutoTokenizer.from_pretrained(\"{model_name}\").save_pretrained(\"{save_path}\")"
-        )
+        "".to_string()
     };
-    match Command::new("python").args(["-c", &code]).status() {
+    let code = format!(
+        "from transformers import AutoTokenizer; \
+        AutoTokenizer.from_pretrained( \
+            \"{model_name}\", \
+            {revision_arg} \
+            local_files_only=True \
+        ).save_pretrained(\"{save_path}\")"
+    );
+    match Command::new("python")
+        .args(["-c", &code])
+        .env("HF_HUB_OFFLINE", "1")
+        .status()
+    {
         Ok(status) => {
             if status.success() {
                 Ok(())
