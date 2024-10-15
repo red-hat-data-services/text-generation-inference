@@ -11,7 +11,7 @@ A number of features here are similar/equivalent but are implemented differently
 Some upstream changes were intentionally not pulled in because they weren't required for our current usage, for example OPT/Galactica model support. And we have stopped pulling in any upstream work after TGI version 1.0, following which the Apache 2.0 OSS license doesn't apply.
 
 ---
-### Table of contents
+## Table of contents
 
 - [Mapping of RHOAI Releases to IBM TGIS commits](#mapping-of-rhoai-releases-to-ibm-tgis-commits)
 - [Some of the features in this repo not in HF TGI as of v1.0](#some-of-the-features-in-this-repo-not-in-hf-tgi-as-of-v10)
