@@ -26,6 +26,7 @@ Some upstream changes were intentionally not pulled in because they weren't requ
 - [Metrics](#metrics)
 
 ---
+
 ### Mapping of RHOAI Releases to IBM TGIS commits
 All RHOAI TGIS images are stored in: 
 
