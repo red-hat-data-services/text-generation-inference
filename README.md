@@ -10,6 +10,7 @@ A number of features here are similar/equivalent but are implemented differently
 
 Some upstream changes were intentionally not pulled in because they weren't required for our current usage, for example OPT/Galactica model support. And we have stopped pulling in any upstream work after TGI version 1.0, following which the Apache 2.0 OSS license doesn't apply.
 
+
 ---
 ### Table of contents
 
