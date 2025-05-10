@@ -426,7 +426,8 @@ spec:
     - name: workspace
     - name: git-auth
       optional: true
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-text-generation-inference
   workspaces:
   - name: workspace
     volumeClaimTemplate:
