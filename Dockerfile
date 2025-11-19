@@ -9,7 +9,7 @@ ARG AUTO_GPTQ_VERSION=0.7.1
 # e.g. flash-attn v2.5.2 => torch ['1.12.1', '1.13.1', '2.0.1', '2.1.2', '2.2.0', '2.3.0.dev20240126']
 # https://github.com/Dao-AILab/flash-attention/blob/v2.5.2/.github/workflows/publish.yml#L47
 # use nightly build index for torch .dev pre-release versions
-ARG PYTORCH_VERSION=2.2.1
+ARG PYTORCH_VERSION=2.6.0
 
 ARG PYTHON_VERSION=3.11
 
