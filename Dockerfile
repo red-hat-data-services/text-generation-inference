@@ -9,7 +9,8 @@ ARG AUTO_GPTQ_VERSION=0.7.1
 # e.g. flash-attn v2.5.2 => torch ['1.12.1', '1.13.1', '2.0.1', '2.1.2', '2.2.0', '2.3.0.dev20240126']
 # https://github.com/Dao-AILab/flash-attention/blob/v2.5.2/.github/workflows/publish.yml#L47
 # use nightly build index for torch .dev pre-release versions
-ARG PYTORCH_VERSION=2.2.1
+ARG PYTORCH_VERSION=2.6.0
+ARG PYTORCH_CUDA_CHANNEL=cu126
 
 ARG PYTHON_VERSION=3.11
 
@@ -182,6 +183,7 @@ RUN cd integration_tests && make install
 FROM cuda-devel as python-builder
 ARG PYTORCH_INDEX
 ARG PYTORCH_VERSION
+ARG PYTORCH_CUDA_CHANNEL
 ARG PYTHON_VERSION
 ARG MINIFORGE_VERSION=23.11.0-0
 
@@ -203,7 +205,7 @@ ENV PATH=/opt/tgis/bin/:$PATH
 # Install specific version of torch
 RUN pip install ninja==1.11.1.1 --no-cache-dir
 RUN pip install packaging --no-cache-dir
-RUN pip install torch==$PYTORCH_VERSION+cu121 --index-url "${PYTORCH_INDEX}/cu121" --no-cache-dir
+RUN pip install torch==${PYTORCH_VERSION}+${PYTORCH_CUDA_CHANNEL} --index-url "${PYTORCH_INDEX}/${PYTORCH_CUDA_CHANNEL}" --no-cache-dir
 
 
 ## Build flash attention v2 ####################################################
